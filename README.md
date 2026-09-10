@@ -3,7 +3,8 @@
 Ferramenta pública para o eleitor registrar seus votos, consultar os dados oficiais de cada
 candidato e testar a coerência da própria chapa. Sem login, sem coleta, sem servidor.
 
-Este repositório está no **M1: pipeline de dados** (§9 da spec). Ainda não há interface.
+Estado: **M2 — cédula estática** (§9 da spec). O pipeline de dados (M1) e a cédula funcionam;
+o questionário de posições e o percentual de aderência ainda não existem, por decisão (§0.2).
 
 Especificação completa: [`CEDULA-ABERTA-SPEC.md`](CEDULA-ABERTA-SPEC.md).
 
@@ -11,11 +12,31 @@ Especificação completa: [`CEDULA-ABERTA-SPEC.md`](CEDULA-ABERTA-SPEC.md).
 
 ```bash
 npm ci
-npm run fetch                   # baixa o pacote do TSE para data/raw/ (não versionado)
-npm run normalize -- --uf=SP    # gera data/build/SP/*.json   (--uf=all para as 27)
-npm run validate                # invariantes; falhou, não publica
-npm run check                   # tipos + testes + invariantes
+npx playwright install chromium   # só para os testes de navegador
+
+npm run fetch                     # baixa o pacote do TSE para data/raw/ (não versionado)
+npm run propostas -- --uf=SP      # índice de propostas por Range (~8 KB/UF, nenhum PDF)
+npm run normalize -- --uf=SP      # gera data/build/SP/*.json   (--uf=all para as 27)
+npm run validate                  # invariantes do dado; falhou, não publica
+
+npm run dev                       # site em desenvolvimento
+npm run build                     # site estático em dist/
+npm run check                     # tipos + invariantes + build + todos os testes
 ```
+
+## Orçamento de performance
+
+Medido a cada execução do CI, em 360 px e Slow 4G, e não estimado. Estourou, o build falha.
+
+| Métrica | Teto (§1.4) | Medido |
+|---|---|---|
+| Primeira tela da cédula | 150 KB | **37,7 KB** |
+| Interativa em Slow 4G, sem cache | 3.000 ms | **1.795 ms** |
+| Deslocamento de layout (CLS) | 0,05 | **0,0000** |
+| Abrir a lista de 1.430 candidatos, Slow 4G | — | **1.019 ms** |
+
+JavaScript total da cédula: 16,3 KB (5,7 KB comprimido). Zero dependências em runtime,
+zero requisições para fora do site, zero fontes de terceiros.
 
 ## Fonte
 
@@ -49,6 +70,15 @@ isso `situacao.disponivel` existe no modelo: a interface precisa dizer "o TSE ai
 nunca traduzir ausência para "deferido". O alerta de registro indeferido/cassado (§5.4) fica
 bloqueado até `meta.json.situacaoRegistro.comSituacao` deixar de ser 0 — o `validate` avisa.
 
+**O runner do GitHub Actions é bloqueado pelo TSE.** Recebe 403 do CDN e do portal CKAN, enquanto
+a máquina do mantenedor, com IP residencial brasileiro, recebe 200. A Akamai bloqueia faixas de IP
+de datacenter. Por isso a coleta é local (`npm run build:data` e commit), e o workflow `coletar`
+espera um runner próprio pela variável `RUNNER_COLETA`. O workflow `verificar`, que roda em todo
+PR, não fala com o TSE.
+
+**O TSE bloqueia requisições HEAD.** Devolve 403 mesmo para URL que existe. Use sempre GET
+e cancele o corpo — é o que `scripts/conferir-fontes.ts` faz.
+
 **A API DivulgaCandContas está vazia para 2026.** Responde 200 com `candidatos: []` em todos os
 cargos (CD_ELEICAO 6259, verificado em 10/09/2026). O critério de pronto do M1 na spec dependia
 dela; foi substituído pela conferência contra o CSV consolidado.
@@ -61,6 +91,38 @@ diário precisa ser lido por humano em período eleitoral.
 **Gerar as 27 UFs produz ~12 MB em `data/build`.** Com PR diário durante a campanha isso pesa no
 repositório. Decidir no M6 se o dado versionado vai minificado.
 
+## Propostas de governo: link, não cópia
+
+A ferramenta **não hospeda, não extrai e não resume** proposta de governo. Diz que o documento
+existe e leva à página oficial do candidato no TSE.
+
+Isso apaga de uma vez o risco nº 3 da spec — resumo gerado por IA sair errado — e toda a dívida
+de OCR do §3.3. O que continua sendo trabalho nosso é saber *quem* registrou proposta, sem o que
+o link viraria promessa vazia.
+
+Como: o CDN do TSE aceita requisições `Range`, então lemos apenas o índice do pacote de cada
+estado — **~8 KB por UF em vez de 13,6 MB**. Nas 27 unidades, 216 KB por coleta em vez de ~380 MB.
+
+Verificado no dado de 2026: só cargos majoritários registram proposta (13 de 13 presidentes,
+6 de 7 governadores de SP). Senadores e deputados, nenhum — o que confirma a suposição da spec.
+
+O código da eleição difere entre o pleito federal (6257) e cada estadual (6259 em SP), e vem do
+dado. Fixá-lo no código geraria link quebrado para metade dos candidatos.
+
+## O que a interface garante
+
+- **Filtro reordena, nunca apaga.** A busca alcança o universo inteiro do cargo; a contagem
+  fica sempre à vista ("1430 candidatos" / "12 de 1430").
+- **Nenhum destaque editorial.** Sem "em alta", sem "principais", sem foto maior para uns.
+  O único destaque é o que o eleitor criou ao votar.
+- **A ausência de dado aparece como ausência.** A situação do registro, que o TSE ainda não
+  publicou, é dita na cédula, na ficha e na página de transparência — não é omitida.
+- **A ficha tem acesso visível.** O botão redondo em cada linha da lista abre os dados do
+  candidato. Antes só abria por toque longo, o que ninguém descobre — e é lá que fica o link
+  da proposta.
+- **Funciona sem rede.** O voto vive no aparelho e a cédula desenha antes de qualquer
+  requisição. O service worker guarda a casca e a lista da UF escolhida.
+
 ## Estrutura
 
 ```
@@ -68,13 +130,29 @@ scripts/
   fetch-tse.ts        download do pacote + proveniência
   normalize.ts        casca de I/O
   validate.ts         invariantes do CI
+  conferir-fontes.ts  checagem semanal das URLs do §3
+  indexar-propostas.ts  quem registrou proposta, lendo só o índice do pacote
   lib/
     unzip.ts          leitor de ZIP sem dependência (build-time)
+    zip-remoto.ts     índice de ZIP remoto por HTTP Range, sem baixar o arquivo
     csv.ts            CSV latin-1 do TSE
     normalizar.ts     lógica pura de normalização — é aqui que se mexe
     tse.ts            constantes verificadas contra o dado
     types.ts          modelo de dados
-tests/                node:test, sem framework
+src/
+  pages/              /, /[uf]/, metodologia, fontes, transparência, privacidade
+  lib/
+    cedula.ts         os seis slots, o diagnóstico, exportação
+    folha.ts          bottom sheet de escolha
+    virtual.ts        rolagem virtualizada
+    alertas.ts        alertas estruturais (§5.4) — lógica pura, testada
+    coligacao.ts      leitura da composição declarada
+    estado.ts         localStorage, chave única
+  styles/             tokens, base mobile-first, cédula, impressão
+public/
+  sw.js               service worker (offline)
+  manifest.webmanifest
+tests/                node:test + playwright, sem framework de teste
 data/build/           JSONs versionados
 data/raw/             baixado do TSE, fora do git
 ```

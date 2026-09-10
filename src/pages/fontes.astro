@@ -1,0 +1,74 @@
+---
+import Base from "../layouts/Base.astro";
+import { dataBr, meta } from "../lib/build.ts";
+const m = meta();
+---
+<Base titulo="Fontes — Cédula Aberta">
+  <div class="conteudo">
+    <h1>Fontes</h1>
+
+    <h2>Dado usado nesta versão</h2>
+    <dl class="campos">
+      <div>
+        <dt>Origem</dt>
+        <dd><a href="https://dadosabertos.tse.jus.br/dataset/candidatos-2026">{m.fonte.nome}</a></dd>
+      </div>
+      <div>
+        <dt>Arquivo</dt>
+        <dd style="font-family: var(--fonte-numero); font-size: 0.85rem;">{m.fonte.url}</dd>
+      </div>
+      <div>
+        <dt>Licença</dt>
+        <dd>
+          {m.fonte.licenca} — a atribuição ao TSE é obrigatória e está em todas as páginas.
+          Os dados derivados publicados aqui herdam a mesma licença.
+        </dd>
+      </div>
+      <div>
+        <dt>Última coleta</dt>
+        <dd>{dataBr(m.geradoEm)}</dd>
+      </div>
+      <div>
+        <dt>SHA-256 do arquivo baixado</dt>
+        <dd style="font-family: var(--fonte-numero); font-size: 0.8rem;">{m.fonte.sha256}</dd>
+      </div>
+      <div>
+        <dt>Candidaturas lidas</dt>
+        <dd>{m.linhasCsvLidas.toLocaleString("pt-BR")}</dd>
+      </div>
+    </dl>
+
+    <h2>Propostas de governo</h2>
+    <p>
+      Esta ferramenta <strong>não hospeda, não extrai e não resume</strong> proposta de governo.
+      Ela informa que o documento existe e leva você à página oficial do candidato no
+      Tribunal Superior Eleitoral, onde está o arquivo que a campanha registrou.
+    </p>
+    <p>
+      A decisão é deliberada: um resumo automático que distorça a proposta de um candidato em
+      ano eleitoral é um dano que nenhuma conveniência compensa. Se um dia houver resumo aqui,
+      ele virá rotulado como gerado por máquina, ao lado do documento original e nunca sozinho.
+    </p>
+    <p style="font-size: 0.88rem; color: var(--texto-suave);">
+      Para saber quem registrou proposta, lemos apenas o índice do pacote oficial de cada estado,
+      por requisição HTTP Range — cerca de 8 KB por unidade da federação, sem transferir PDF algum.
+      Só cargos majoritários registram proposta: verificado no dado de 2026, são os candidatos a
+      presidente e a governador; senadores e deputados não registram.
+    </p>
+
+    <h2>O que ainda não vem de fonte nenhuma</h2>
+    <ul class="pilha" style="--espaco: 0.4rem;">
+      <li><strong>Situação do registro</strong> — o TSE publica o campo vazio para 2026.</li>
+      <li><strong>Bens declarados</strong> — existem no portal, ainda não incorporados.</li>
+      <li><strong>Posições dos candidatos em temas</strong> — dependem de leitura documental, e não entram por inferência.</li>
+    </ul>
+
+    <h2>Como contestar</h2>
+    <p>
+      Se um dado aqui estiver errado, ele está errado <em>ou</em> na nossa transformação,
+      <em>ou</em> no arquivo do TSE — e as duas coisas são verificáveis. As divergências que já
+      encontramos estão em <a href="/transparencia/">Transparência</a>, com o identificador
+      de cada candidatura envolvida.
+    </p>
+  </div>
+</Base>
